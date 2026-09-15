@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SyncStatus {
+  SYNCED
+  PENDING
+  CONFLICT
+  ERROR
+  QUARANTINED
+}
+
+enum SyncDirection {
+  TO_PROVIDER
+  FROM_PROVIDER
+}
+
+enum SyncOpStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  QUARANTINED
+}
+
+enum ConflictResolution {
+  KEEP_LOCAL
+  KEEP_REMOTE
+  MERGED
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String     @default("")
+  status      String     @default("open")
+  syncStatus  SyncStatus @default(PENDING)
+
+  version     Int        @default(1)
+  deletedAt   DateTime?
+
+  githubIssueNumber Int?   @unique
+  githubUpdatedAt   DateTime?
+
+  localUpdatedAt  DateTime @default(now())
+  remoteUpdatedAt DateTime?
+
+  conflictLocalTitle       String?
+  conflictLocalDescription String?
+  conflictLocalStatus      String?
+  conflictRemoteTitle       String?
+  conflictRemoteDescription String?
+  conflictRemoteStatus      String?
+  conflictDetectedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  syncOperations SyncOperation[]
+
+  @@index([syncStatus])
+  @@index([deletedAt])
+  @@index([title])
+  @@index([updatedAt])
+}
+
+model SyncOperation {
+  id          String        @id @default(uuid())
+  taskId      String
+  task        Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  direction   SyncDirection
+  operation   String
+  payload     Json
+  status      SyncOpStatus  @default(PENDING)
+  retryCount  Int           @default(0)
+  maxRetries  Int           @default(5)
+  lastError   String?
+  idempotencyKey String?    @unique
+  priority    Int           @default(0)
+  scheduledAt DateTime      @default(now())
+  processedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([taskId])
+}
+
+model WebhookEvent {
+  id          String   @id @default(uuid())
+  deliveryId  String   @unique
+  eventType   String
+  action      String?
+  payload     Json
+  processed   Boolean  @default(false)
+  processedAt DateTime?
+  result      String?
+  createdAt   DateTime @default(now())
+
+  @@index([processed])
+}
+
+model SyncCheckpoint {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  cursor    String?
+  metadata  Json?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model SyncRun {
+  id           String    @id @default(uuid())
+  type         String
+  status       String    @default("running")
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  tasksSynced  Int       @default(0)
+  tasksFailed  Int       @default(0)
+  errorMessage String?
+  metadata     Json?
+}
